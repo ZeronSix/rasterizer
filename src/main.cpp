@@ -1,7 +1,7 @@
 #include <iostream>
 #include <memory>
 #include "tty_context.hpp"
-#include "rasterizer.h"
+#include "rasterizer.hpp"
 #include "mouse.hpp"
 #include "shaders/basic_vertex_shader.hpp"
 #include "shaders/basic_fragment_shader.hpp"
