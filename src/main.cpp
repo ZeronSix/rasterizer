@@ -3,23 +3,22 @@
 #include "tty_context.hpp"
 #include "rasterizer.hpp"
 #include "mouse.hpp"
-#include "shaders/basic_vertex_shader.hpp"
-#include "shaders/basic_fragment_shader.hpp"
+#include "shaders/shaders.hpp"
 
 using namespace rst;
 
 int main()
 {
     auto projection = ProjectionMatrix(120.0f * DEG2RAD, ASPECT_RATIO, 0.01f, 1000.0f);
-        TtyContext context;
-    BasicVertexShader vs {
+    TtyContext context;
+    PhongVertexShader vs {
         Mat4f::Id(),
         projection,
-        Mat3f::Id()
+        Mat4f::Id()
     };
-    BasicFragmentShader fs;
-    Rasterizer<BasicVertexShader, BasicFragmentShader> rast{context, vs, fs};
-    Mesh cube = Mesh::LoadFromObj("../assets/cube.obj");
+    PhongFragmentShader fs;
+    Rasterizer<PhongVertexShader, PhongFragmentShader> rast{context, vs, fs};
+    Mesh cube = Mesh::LoadFromObj("../../assets/cube.obj");
     Mouse mouse;
 
     float theta = M_PI_2;
@@ -43,6 +42,11 @@ int main()
                        std::sin(theta) * std::cos(phi)};
 
         context.Clear();
+
+        Mat4f rot = LookRotation(direction, Vec3f{0, 1, 0});
+        Mat4f trans = TranslationMatrix(Vec3f{0, 0, 10});
+        vs.modelMatrix = trans * rot;
+        vs.normalMatrix = rot;
         rast.RasterizeVertexArray(cube.vertices, cube.indices);
         context.FlushFb();
     }

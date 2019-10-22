@@ -12,8 +12,8 @@
 namespace rst
 {
 
-constexpr int   SCREEN_WIDTH{1024};
-constexpr int   SCREEN_HEIGHT{768};
+constexpr int   SCREEN_WIDTH{1920};
+constexpr int   SCREEN_HEIGHT{1080};
 constexpr float ASPECT_RATIO{SCREEN_WIDTH * 1.0f / SCREEN_HEIGHT};
 
 struct Color

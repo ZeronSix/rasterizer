@@ -214,6 +214,8 @@ struct Mat
         {
             result[i][i] = 1;
         }
+
+        return result;
     }
 };
 
@@ -259,16 +261,17 @@ T Clamp(T value, T min, T max) noexcept
     return std::min(min, std::max(value, max));
 }
 
-inline Mat3f LookRotation(const Vec3f &dir, const Vec3f &up) noexcept
+inline Mat4f LookRotation(const Vec3f &dir, const Vec3f &up) noexcept
 {
     Vec3f right   = Normalize(Cross(up, dir));
     Vec3f newUp   = Normalize(Cross(dir, right));
     Vec3f normDir = Normalize(dir);
 
-    return Mat3f{
-        right.x, right.y, right.z,
-        newUp.x, newUp.y, newUp.z,
-        normDir.x, normDir.y, normDir.z
+    return Mat4f{
+        right.x, right.y, right.z, 0,
+        newUp.x, newUp.y, newUp.z, 0,
+        normDir.x, normDir.y, normDir.z, 0,
+        0, 0, 0, 1
     };
 }
 
@@ -277,13 +280,23 @@ inline Mat4f ProjectionMatrix(float horizontalFov, float aspectRatio, float near
     float cotHalfHorizontalFov = 1.0f / std::tan(horizontalFov / 2);
     float cotHalfVerticalFov   = 1.0f / std::tan(horizontalFov / 2) * aspectRatio;
     float depthCoeff1          = -(farClipPlane + nearClipPlane) / (farClipPlane - nearClipPlane);
-    float depthCoeff2          = -2.0f * farClipPlane * nearClipPlane / (farClipPlane - nearClipPlane);
+    float depthCoeff2          = 2.0f * farClipPlane * nearClipPlane / (farClipPlane - nearClipPlane);
 
     return Mat4f{
         cotHalfHorizontalFov, 0.0f,               0.0f,        0.0f,
         0.0f,                 cotHalfVerticalFov, 0.0f,        0.0f,
         0.0f,                 0.0f,               depthCoeff1, depthCoeff2,
         0.0f,                 0.0f,               -1.0f,       0.0f
+    };
+}
+
+inline Mat4f TranslationMatrix(const Vec3f &offset)
+{
+    return Mat4f{
+        1, 0, 0, offset.x,
+        0, 1, 0, offset.y,
+        0, 0, 1, offset.z,
+        0, 0, 0, 1
     };
 }
 

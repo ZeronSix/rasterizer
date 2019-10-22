@@ -2,8 +2,8 @@
 // Created by zhdanovskiy on 16.10.2019.
 //
 
-#ifndef BASIC_VERTEX_SHADER_HPP
-#define BASIC_VERTEX_SHADER_HPP
+#ifndef PHONG_VERTEX_SHADER_HPP
+#define PHONG_VERTEX_SHADER_HPP
 
 #include "../mesh.hpp"
 #include "../math.hpp"
@@ -11,13 +11,14 @@
 namespace rst
 {
 
-struct BasicVertexShader
+struct PhongVertexShader
 {
     using InType = Mesh::Vertex;
     struct OutType
     {
         Vec4f pos;
         Vec3f norm;
+        Vec3f worldPos;
     };
 
     Mat4f modelMatrix;
@@ -31,7 +32,8 @@ struct BasicVertexShader
 
         OutType out{
             outPos,
-            Vec3f{normalMatrix * Vec4f{in.norm, 1.0f}}
+            Normalize(Vec3f{normalMatrix * Vec4f{in.norm, 1.0f}}),
+            Vec3f(modelMatrix * inPos4)
         };
         return out;
     }
@@ -40,4 +42,4 @@ struct BasicVertexShader
 }
 
 
-#endif //BASIC_VERTEX_SHADER_HPP
+#endif //PHONG_VERTEX_SHADER_HPP
