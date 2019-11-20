@@ -9,6 +9,8 @@
 #include "screen_buffer.hpp"
 #include "math.hpp"
 #include "mesh.hpp"
+#include "thread_pool.hpp"
+#include "batch_tasks.hpp"
 #include <algorithm>
 
 namespace rst
@@ -18,153 +20,101 @@ template<typename VShader, typename FShader>
 class Rasterizer
 {
 public:
-    using VertexIn  = typename VShader::InType;
-    using VertexOut = typename VShader::OutType;
+    using VsIn  = typename VShader::InType;
+    using VsOut = typename VShader::OutType;
+    using FsIn  = typename FShader::InType;
 
-         Rasterizer(TtyContext &context, VShader &vs, FShader &fs) noexcept;
-    void RasterizeLine(const Vec3f &start, const Vec3f &end)       noexcept;
-    void RasterizeTriangle(const VertexIn vertices[3])             noexcept;
-    void RasterizeVertexArray(const std::vector<VertexIn> &vertices,
-                              const std::vector<unsigned> &indices)     noexcept;
+    static constexpr std::size_t VERTEX_BATCH_SIZE{2048};
+    static constexpr std::size_t RASTER_TRI_BATCH_SIZE{2048};
+    static constexpr std::size_t FRAGMENT_BATCH_SIZE{2048};
+
+         Rasterizer(TtyContext &context, VShader &vs, FShader &fs,
+                    std::size_t threads = 1)                        noexcept;
+    void RasterizeVertexArray(const std::vector<VsIn> &vertices,
+                              const std::vector<unsigned> &indices) noexcept;
 private:
+    using VbTask = VertexBatchTask<VShader>;
+    using VbTaskParams = typename VbTask::ThreadParams;
+    using RastTask = RasterBatchTask<VShader>;
+    using RastTaskParams = typename RastTask::ThreadParams;
+    using FragTask = FragBatchTask<typename RastTask::Output, FShader>;
+    using FragTaskParams = typename FragTask::ThreadParams;
+
     TtyContext  &m_context;
     FrameBuffer &m_frameBuf;
     DepthBuffer &m_depthBuf;
     VShader     &m_vertexShader;
     FShader     &m_fragmentShader;
+    std::size_t m_threads;
+    Culling     m_culling;
 
-    void SetPixel(int x, int y, float depth, const Color &color) noexcept;
+    std::vector<VsOut> m_vsOutput;
+    std::vector<VbTaskParams> m_vbTaskParams;
+    std::vector<RastTaskParams> m_rastTaskParams;
+    std::vector<FragTaskParams> m_fragTaskParams;
 };
 
 template<typename VShader, typename FShader>
-Rasterizer<VShader, FShader>::Rasterizer(TtyContext &context, VShader &vs, FShader &fs) noexcept:
+Rasterizer<VShader, FShader>::Rasterizer(TtyContext &context, VShader &vs, FShader &fs, std::size_t threads) noexcept:
     m_context{context},
     m_frameBuf{context.GetFrameBuffer()},
     m_depthBuf{context.GetDepthBuffer()},
     m_vertexShader{vs},
-    m_fragmentShader{fs}
+    m_fragmentShader{fs},
+    m_threads{threads},
+    m_culling{Culling::Ccw}
 {
-}
-
-template<typename VShader, typename FShader>
-void Rasterizer<VShader, FShader>::RasterizeLine(const Vec3f &start, const Vec3f &end) noexcept
-{
-    int startX = m_context.XNdcToScreen(Clamp(std::min(start.x, end.x), -1.0f, 1.0f));
-    int startY = m_context.YNdcToScreen(Clamp(std::min(start.y, end.y), -1.0f, 1.0f));
-    int endX   = m_context.XNdcToScreen(Clamp(std::max(start.x, end.x), -1.0f, 1.0f));
-    int endY   = m_context.YNdcToScreen(Clamp(std::max(start.y, end.y), -1.0f, 1.0f));
-
-    bool isMostlyHorizontal = std::abs(end.x - start.x) > std::abs(end.y - start.y);
-    int pixels = isMostlyHorizontal ? endX - startX : endY - startY;
-
-    for (int i = 0; i < pixels; i++)
+    for (auto i = 0ul; i < m_threads; ++i)
     {
-        float t = isMostlyHorizontal ? (m_context.XScreenToNdc(startX + i) - start.x) / (end.x - start.x) :
-                  (m_context.YScreenToNdc(startY + i) - start.y) / (end.y - start.y);
-        Vec3f pos = start + t * (end - start);
-        SetPixel(m_context.XNdcToScreen(pos.x),
-                 m_context.YNdcToScreen(pos.y),
-                 pos.z,
-                 Color{0xFF, 0xFF, 0xFF});
-    }
-}
-
-static rst::Vec3f LIGHT_POS = {0.0f, 0.0f, 0.0f};
-
-template<typename VShader, typename FShader>
-void Rasterizer<VShader, FShader>::RasterizeTriangle(const VertexIn inputVertices[3]) noexcept
-{
-    VertexOut vertices[3] = {m_vertexShader(inputVertices[0]),
-                             m_vertexShader(inputVertices[1]),
-                             m_vertexShader(inputVertices[2])};
-    for (auto& vertex : vertices)
-    {
-        vertex.pos.x /= vertex.pos.w;
-        vertex.pos.y /= vertex.pos.w;
-        vertex.pos.z /= vertex.pos.w;
-    }
-    Vec4f r1 = vertices[1].pos - vertices[0].pos;
-    Vec4f r2 = vertices[2].pos - vertices[0].pos;
-
-    int minX = m_context.XNdcToScreen(std::min({vertices[0].pos.x,
-                                                vertices[1].pos.x,
-                                                vertices[2].pos.x}));
-    int minY = m_context.YNdcToScreen(std::min({vertices[0].pos.y,
-                                                vertices[1].pos.y,
-                                                vertices[2].pos.y}));
-    int maxX = m_context.XNdcToScreen(std::max({vertices[0].pos.x,
-                                                vertices[1].pos.x,
-                                                vertices[2].pos.x}));
-    int maxY = m_context.YNdcToScreen(std::max({vertices[0].pos.y,
-                                                vertices[1].pos.y,
-                                                vertices[2].pos.y}));
-
-    const float delta = r1.x * r2.y - r1.y * r2.x;
-    if (delta == 0.0f) return;
-
-    for (int y = std::max(minY, 0); y <= std::min(maxY, SCREEN_HEIGHT - 1); ++y)
-    {
-        for (int x = std::max(minX, 0); x <= std::min(maxX, SCREEN_WIDTH - 1); ++x)
-        {
-            Vec4f ndcPixelPos{m_context.XScreenToNdc(x),
-                              m_context.YScreenToNdc(y),
-                              0};
-            Vec4f r = ndcPixelPos - vertices[0].pos;
-
-            float delta1 = r.x * r2.y - r.y * r2.x;
-            float delta2 = r1.x * r.y - r.x * r1.y;
-
-            float beta = delta1 / delta;
-            float gamma = delta2 / delta;
-            float alpha = 1 - beta - gamma;
-
-            // continue if the pixel is outside of the triangle
-            if (beta < 0 || gamma < 0 || alpha < 0) continue;
-
-            VertexOut interpolatedVertex;
-            auto floatInterpolatedValues = reinterpret_cast<float *>(&interpolatedVertex);
-            auto floatInputVertexValues  = reinterpret_cast<float *>(vertices);
-            for (std::size_t i = 0; i < sizeof(interpolatedVertex) / sizeof(float); ++i)
-            {
-                // interpret input vertices as an array of floats and interpolate over them
-                auto floatOffset = sizeof(interpolatedVertex) / sizeof(float);
-                floatInterpolatedValues[i] = alpha * floatInputVertexValues[0 * floatOffset + i] +
-                                             beta  * floatInputVertexValues[1 * floatOffset + i] +
-                                             gamma * floatInputVertexValues[2 * floatOffset + i];
-            }
-
-            auto color = static_cast<Color>(m_fragmentShader(interpolatedVertex));
-            SetPixel(x, y, interpolatedVertex.pos.z, color);
-        }
+        m_vbTaskParams.emplace_back(VbTaskParams{m_vertexShader, m_vsOutput});
+        m_rastTaskParams.emplace_back(RastTaskParams{m_vsOutput, m_culling, m_frameBuf});
+        m_fragTaskParams.emplace_back(FragTaskParams{m_fragmentShader, m_frameBuf, m_depthBuf, context.GetScreenLock()});
     }
 }
 
 template<typename VShader, typename FShader>
-void Rasterizer<VShader, FShader>::RasterizeVertexArray(const std::vector<VertexIn> &vertices,
+void Rasterizer<VShader, FShader>::RasterizeVertexArray(const std::vector<VsIn> &vertices,
                                                         const std::vector<unsigned> &indices) noexcept
 {
-    for (std::size_t i = 0; i < indices.size(); i += 3)
+    m_vsOutput.reserve(vertices.size());
+    /*for (auto &param : m_rastTaskParams)
     {
-        VertexIn triangle[3] = {
-            vertices[indices[i]],
-            vertices[indices[i + 1]],
-            vertices[indices[i + 2]],
-        };
-
-        RasterizeTriangle(triangle);
+        param.output.reserve(1920*1080);
+    }*/
+    {
+        ThreadPool<VbTask> vbPool{m_threads, m_vbTaskParams};
+        for (auto i = 0ul; i < vertices.size(); i += VERTEX_BATCH_SIZE)
+        {
+            auto end = std::min(vertices.size(), i + VERTEX_BATCH_SIZE);
+            vbPool.EnqueueTask(VbTask{&vertices[0], i, end});
+        }
     }
-}
 
-template<typename VShader, typename FShader>
-void Rasterizer<VShader, FShader>::SetPixel(int x, int y, float depth, const Color &color) noexcept
-{
-    if (x < 0 || x >= SCREEN_WIDTH) return;
-    if (y < 0 || y >= SCREEN_HEIGHT) return;
-
-    if (m_depthBuf[y][x] >= depth)
     {
-        m_frameBuf[y][x] = color;
-        m_depthBuf[y][x] = depth;
+        ThreadPool<RastTask> rastPool{m_threads, m_rastTaskParams};
+        for (auto i = 0ul; i < indices.size(); i += RASTER_TRI_BATCH_SIZE * 3)
+        {
+            auto end = std::min(indices.size(), i + RASTER_TRI_BATCH_SIZE * 3);
+            rastPool.EnqueueTask(RastTask{&indices[0], i, end});
+        }
+    }
+
+    {
+        ThreadPool<FragTask> fragPool{m_threads, m_fragTaskParams};
+        for (auto &rastOut : m_rastTaskParams)
+        {
+            for (auto i = 0ul; i < rastOut.output.size(); i += FRAGMENT_BATCH_SIZE)
+            {
+                auto end = std::min(rastOut.output.size(), i + FRAGMENT_BATCH_SIZE);
+                fragPool.EnqueueTask(FragTask{&rastOut.output[0], i, end});
+            }
+        }
+    }
+
+    m_vsOutput.clear();
+    for (auto &params : m_rastTaskParams)
+    {
+        params.output.clear();
     }
 }
 

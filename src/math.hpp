@@ -290,13 +290,36 @@ inline Mat4f ProjectionMatrix(float horizontalFov, float aspectRatio, float near
     };
 }
 
-inline Mat4f TranslationMatrix(const Vec3f &offset)
+inline Mat4f TranslationMatrix(const Vec3f &offset) noexcept
 {
     return Mat4f{
         1, 0, 0, offset.x,
         0, 1, 0, offset.y,
         0, 0, 1, offset.z,
         0, 0, 0, 1
+    };
+}
+
+inline Mat4f Persp(float fov, float ratio, float znear, float zfar) noexcept
+{
+    return Mat4f{
+        -1.f / std::tan(fov), 0.f, 0.f, 0.f,
+        0.f, -ratio / std::tan(fov), 0.f, 0.f,
+        0.f, 0.f, (zfar + znear) / (zfar - znear), 2.f * znear * zfar / (zfar - znear),
+        0.f, 0.f, 1.f, 0.f
+    };
+}
+
+inline Mat4f LookAt(Vec3f eye, Vec3f at, Vec3f up) noexcept
+{
+    Vec3f dir = Normalize(eye - at);
+    Vec3f right = Normalize(Cross(up, dir));
+    up = Normalize(Cross(dir, right));
+    return Mat4f{
+        right.x, right.y, right.z, -Dot(eye, right),
+        up.x,    up.y,    up.z,    -Dot(eye, up),
+        dir.x,   dir.y,   dir.z,   -Dot(eye, dir),
+        0.f,     0.f,     0.f,     1.f
     };
 }
 

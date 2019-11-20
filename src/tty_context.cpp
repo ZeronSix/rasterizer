@@ -40,22 +40,22 @@ void TtyContext::Clear() noexcept
     m_depthBuffer.Clear(1.0f);
 }
 
-float TtyContext::XScreenToNdc(int x) const noexcept
+float XScreenToNdc(int x) noexcept
 {
     return -1.0f + (2.0f * x + 1.0f) / SCREEN_WIDTH;
 }
 
-float TtyContext::YScreenToNdc(int y) const noexcept
+float YScreenToNdc(int y) noexcept
 {
     return -1.0f + (2.0f * y + 1.0f) / SCREEN_HEIGHT;
 }
 
-int TtyContext::XNdcToScreen(float x) const noexcept
+int XNdcToScreen(float x) noexcept
 {
     return std::lround(-0.5f + SCREEN_WIDTH / 2.0f * (x + 1));
 }
 
-int TtyContext::YNdcToScreen(float y) const noexcept
+int YNdcToScreen(float y) noexcept
 {
     return std::lround(-0.5f + SCREEN_HEIGHT / 2.0f * (y + 1));
 }

@@ -9,6 +9,7 @@
 #include "tty_context.hpp"
 #include <vector>
 #include <string>
+#include <fstream>
 
 namespace rst
 {
@@ -23,7 +24,6 @@ public:
         Vec3f pos;
         Vec2f tex;
         Vec3f norm;
-        Color color;
     };
 
     std::vector<Vertex> vertices;

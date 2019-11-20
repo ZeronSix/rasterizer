@@ -11,6 +11,9 @@
 namespace rst
 {
 
+constexpr int SCREEN_WIDTH{1920};
+constexpr int SCREEN_HEIGHT{1080};
+
 template<typename T>
 class ScreenBuffer
 {
@@ -49,13 +52,13 @@ ScreenBuffer<T>::~ScreenBuffer() noexcept
 template<typename T>
 T *ScreenBuffer<T>::operator[](std::size_t y) noexcept
 {
-    return m_memory + m_width * y;
+    return m_memory + m_width * (m_height - 1 - y);
 }
 
 template<typename T>
 T *ScreenBuffer<T>::operator[](std::size_t y) const noexcept
 {
-    return m_memory + m_width * y;
+    return m_memory + m_width * (m_height - 1 - y);
 }
 
 template<typename T>

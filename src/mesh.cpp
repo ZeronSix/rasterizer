@@ -120,7 +120,6 @@ Mesh Mesh::LoadFromObj(const std::string &filename)
                     throw std::runtime_error("Obj parser: failed to parse line " + line);
                 }
 
-                vertex.color.r = vertex.color.g = vertex.color.b = 1;
                 meshVertices.push_back(vertex);
             }
 
